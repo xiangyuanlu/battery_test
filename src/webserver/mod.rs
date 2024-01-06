@@ -6,6 +6,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 pub async fn start_web() {
+    println!("path: {:?}", PathBuf::from(env!("CARGO_MANIFEST_DIR")));
     let config = RustlsConfig::from_pem_file(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("self_signed_certs")
@@ -19,9 +20,9 @@ pub async fn start_web() {
     let app = Router::new()
         .route("/hello", get(handler_hello))
         .route("/", get(handler))
-        .route_service("/start", ServeFile::new("www/index.html"));
+        .route_service("/start", ServeFile::new("/xbrother/app/www/index.html"));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([192, 168, 2, 43], 3000));
 
     axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service())
