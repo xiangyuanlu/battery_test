@@ -23,9 +23,9 @@ pub async fn start_web() {
         .route_service("/index", ServeFile::new("www/index.html"))
         .route_service("/index_test", ServeFile::new("www/static.html"));
 
-    // let addr = SocketAddr::from(([192, 168, 2, 43], 3000));
+    let addr = SocketAddr::from(([192, 168, 2, 43], 3000));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    // let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
     axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service())
