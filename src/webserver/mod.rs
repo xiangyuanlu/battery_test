@@ -1,5 +1,5 @@
-use axum::{routing::get, Router};
-use axum_server::tls_rustls::RustlsConfig;
+use axum::{http::StatusCode, routing::get, Router};
+use axum_server::{service, tls_rustls::RustlsConfig};
 use std::{net::SocketAddr, path::PathBuf};
 use tower_http::{
     services::{ServeDir, ServeFile},
@@ -18,11 +18,14 @@ pub async fn start_web() {
     .await
     .unwrap();
     let app = Router::new()
+        .nest_service("/", ServeDir::new("www"))
         .route("/hello", get(handler_hello))
-        .route("/", get(handler))
-        .route_service("/start", ServeFile::new("/xbrother/app/www/index.html"));
+        .route_service("/index", ServeFile::new("www/index.html"))
+        .route_service("/index_test", ServeFile::new("www/static.html"));
 
-    let addr = SocketAddr::from(([192, 168, 2, 43], 3000));
+    // let addr = SocketAddr::from(([192, 168, 2, 43], 3000));
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
     axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service())
