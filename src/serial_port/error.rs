@@ -2,8 +2,8 @@ use thiserror::Error;
 //为自定义error继承Error trait
 #[derive(Error, Debug)]
 pub enum SerialPortError {
-    #[error("north params illegal:{0}")]
-    NorthParamsIllegal(String),
+    #[error("serial port open failed name:{0} baud:{1}")]
+    SerialPortOpenFailed(String, u32),
     #[error("mqtt params illegal:{0}")]
     MqttParamsIllegal(String),
     #[error("mqtt connection failed:{0}")]

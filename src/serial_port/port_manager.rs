@@ -1,5 +1,6 @@
 use std::{error, sync::Arc};
 
+use super::error::SerialPortError;
 use once_cell::sync::OnceCell;
 use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 
@@ -28,12 +29,14 @@ impl PortManager {
                 return Ok(pt.clone());
             }
             None => {
-                if let core::result::Result::Ok(port) =
-                    serialport::new("/dev/ttyUSB0", 115_200).open()
-                {
-                    return Ok(Arc::new(Mutex::new(port)));
+                if let core::result::Result::Ok(port) = serialport::new(name, rate).open() {
+                    let arc_port = Arc::new(Mutex::new(port));
+                    self.ports.insert(name.to_string(), arc_port.clone());
+                    return Ok(arc_port);
                 } else {
-                    return Err(anyhow::Error::msg("dummy errror"));
+                    return Err(
+                        SerialPortError::SerialPortOpenFailed(name.to_string(), rate).into(),
+                    );
                 }
             }
         }
