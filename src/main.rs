@@ -1,9 +1,9 @@
 use tracing::info;
 
+pub mod biz;
 pub mod log;
 pub mod serial_port;
 pub mod webserver;
-
 use crate::webserver::start_web;
 
 pub fn search_matrix(matrix: Vec<Vec<i32>>, target: i32) -> bool {
@@ -15,9 +15,12 @@ pub fn search_matrix(matrix: Vec<Vec<i32>>, target: i32) -> bool {
     while x < a && y >= 0 {
         if target == matrix[x][y] {
             return true;
-        } else if target > matrix[x][y] {
+        } else if matrix[x][y] > target {
             y -= 1;
         } else {
+            if y + 1 != b {
+                break;
+            }
             x += 1;
         }
     }

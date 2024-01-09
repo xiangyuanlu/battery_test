@@ -7,7 +7,14 @@ use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use anyhow::{Ok, Result};
 use dashmap::DashMap;
 use parking_lot::Mutex;
-pub fn get_channel_manager() -> &'static PortManager {
+
+pub struct Port {
+    name: String,
+    baud: u32,
+    port: Box<dyn SerialPort>,
+}
+
+pub fn get_manager() -> &'static PortManager {
     static INSTANCE: OnceCell<PortManager> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         let m = PortManager {
@@ -17,11 +24,11 @@ pub fn get_channel_manager() -> &'static PortManager {
     })
 }
 pub struct PortManager {
-    ports: DashMap<String, Arc<Mutex<Box<dyn SerialPort>>>>,
+    ports: DashMap<String, Arc<Mutex<Port>>>,
 }
 
 impl PortManager {
-    pub fn get_port(&self, name: &str, rate: u32) -> Result<Arc<Mutex<Box<dyn SerialPort>>>> {
+    pub fn get_port(&self, name: &str, rate: u32) -> Result<Arc<Mutex<Port>>> {
         let dst_port = self.ports.get(name);
         match dst_port {
             Some(port) => {
@@ -30,7 +37,11 @@ impl PortManager {
             }
             None => {
                 if let core::result::Result::Ok(port) = serialport::new(name, rate).open() {
-                    let arc_port = Arc::new(Mutex::new(port));
+                    let arc_port = Arc::new(Mutex::new(Port {
+                        name: name.to_string(),
+                        baud: rate,
+                        port: port,
+                    }));
                     self.ports.insert(name.to_string(), arc_port.clone());
                     return Ok(arc_port);
                 } else {
