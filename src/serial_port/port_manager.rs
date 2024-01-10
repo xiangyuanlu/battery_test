@@ -15,10 +15,20 @@ pub struct Port {
 }
 
 impl Port {
-    pub fn read(&mut self, buf: &mut Vec<u8>) -> Result<u32> {
-        let t = self.port.read(buf)?;
-        Ok(t as u32)
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let tt = self.port.read(buf);
+        if let Err(e) = tt {
+            print!("Error reading:{}", e.kind());
+        }
+        let rt = self.port.read(buf)?;
+        Ok(rt)
     }
+
+    pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let rt = self.port.write(buf)?;
+        Ok(rt)
+    }
+
     pub fn get_name(&self) -> String {
         self.name.to_owned()
     }

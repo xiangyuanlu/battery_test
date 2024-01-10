@@ -4,6 +4,7 @@ pub mod biz;
 pub mod log;
 pub mod serial_port;
 pub mod webserver;
+pub mod xutil;
 use crate::webserver::start_web;
 
 //nums = [5,7,7,8,8,10], target = 8
