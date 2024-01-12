@@ -88,23 +88,10 @@ impl Port {
                         if let Err(err) = port.write(&df.buf[..]) {
                             error!("{} tx error: {}", name_tx, err);
                         } else {
-                            debug!("{} tx:{:02X?}", name_tx, &df.buf[..]);
+                            debug!("{} tx success:{:02X?}", name_tx, &df.buf[..]);
                         }
                     }
                     Err(err) => {}
-                }
-
-                match port.read(&mut buffer[..]) {
-                    Result::Ok(size) => {
-                        debug!("{} rx:{:02X?}", name_tx, &buffer[..size]);
-                        let df = DataFrame {
-                            buf: buffer.to_vec(),
-                        };
-                        tx.send(df);
-                    }
-                    Err(err) => {
-                        error!("{} rx error: {}", name_tx, err);
-                    }
                 }
             })
         };
