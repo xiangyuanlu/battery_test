@@ -32,7 +32,7 @@ pub struct Port {
 
 #[derive(Debug)]
 pub struct DataFrame {
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
 }
 
 impl Drop for Port {
@@ -52,16 +52,16 @@ impl Port {
     pub fn new(name: String, baud: u32, tout: u64) -> Result<Self> {
         let (tx, rx) = crossbeam::channel::bounded(12);
 
-        let mut port = serialport::new(name, baud)
+        let mut port = serialport::new(name.clone(), baud)
             .timeout(Duration::from_millis(tout))
             .open_native()?;
-
+        let name_tx = name.clone();
         let runing = Arc::new(AtomicBool::new(true));
         let trd_rx = {
+            let tx = tx.clone();
             let mut port = port.try_clone()?;
             let runing = runing.clone();
             let mut buffer = [0u8; 512];
-
             thread::spawn(move || loop {
                 match port.read(&mut buffer[..]) {
                     Result::Ok(size) => {
@@ -80,14 +80,15 @@ impl Port {
         let trd_tx = {
             let mut buffer = [0u8; 512];
             let mut port = port.try_clone()?;
-
+            let tx = tx.clone();
+            let rx = rx.clone();
             thread::spawn(move || loop {
                 match rx.recv() {
                     Result::Ok(df) => {
                         if let Err(err) = port.write(&df.buf[..]) {
-                            error!("{} tx error: {}", name, err);
+                            error!("{} tx error: {}", name_tx, err);
                         } else {
-                            debug!("{} tx:{:02X?}", name, &df.buf[..]);
+                            debug!("{} tx:{:02X?}", name_tx, &df.buf[..]);
                         }
                     }
                     Err(err) => {}
@@ -95,14 +96,14 @@ impl Port {
 
                 match port.read(&mut buffer[..]) {
                     Result::Ok(size) => {
-                        debug!("{} rx:{:02X?}", name, &buffer[..size]);
+                        debug!("{} rx:{:02X?}", name_tx, &buffer[..size]);
                         let df = DataFrame {
                             buf: buffer.to_vec(),
                         };
                         tx.send(df);
                     }
                     Err(err) => {
-                        error!("{} rx error: {}", name, err);
+                        error!("{} rx error: {}", name_tx, err);
                     }
                 }
             })
@@ -119,33 +120,16 @@ impl Port {
         Ok(port)
     }
 
-    fn Recv(&self) -> Result<DataFrame> {
+    pub fn Recv(&self) -> Result<DataFrame> {
         let df = self.rx.recv()?;
         Ok(df)
     }
 
-    fn Send(&self, buf: &[u8]) -> Result<usize> {
+    pub fn Send(&self, buf: &[u8]) -> Result<usize> {
         let df = DataFrame { buf: buf.to_vec() };
         let sz = self.tx.send(df)?;
         Ok(buf.len())
     }
-}
-
-impl Port {
-    // pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-    //     let tt = self.port.read(buf);
-    //     if let Err(e) = tt {
-    //         print!("Error reading:{}", e.kind());
-    //     }
-    //     let rt = self.port.read(buf)?;
-    //     Ok(rt)
-    // }
-
-    // pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
-    //     let rt = self.port.write(buf)?;
-    //     Ok(rt)
-    // }
-
     pub fn get_name(&self) -> String {
         self.name.to_owned()
     }
@@ -164,34 +148,23 @@ pub fn get_manager() -> &'static PortManager {
     })
 }
 pub struct PortManager {
-    ports: DashMap<String, Arc<Mutex<Port>>>,
+    ports: DashMap<String, Arc<Port>>,
 }
 
 impl PortManager {
-    pub fn get_port(&self, name: &str, rate: u32) -> Result<Arc<Mutex<Port>>> {
-        return Err(SerialPortError::SerialPortOpenFailed(name.to_string(), rate).into());
+    pub fn get_port(&self, name: &str, baud: u32, timeout: u64) -> Result<Arc<Port>> {
+        let dst_port = self.ports.get(name);
+        match dst_port {
+            Some(port) => {
+                let pt = port.value();
+                return Ok(pt.clone());
+            }
+            None => {
+                let npt = Port::new(name.to_string(), baud, timeout)?;
+                let apt = Arc::new(npt);
+                self.ports.insert(name.to_string(), apt.clone());
+                Ok(apt)
+            }
+        }
     }
-    //     let dst_port = self.ports.get(name);
-    //     match dst_port {
-    //         Some(port) => {
-    //             let pt = port.value();
-    //             return Ok(pt.clone());
-    //         }
-    //         None => {
-    //             if let core::result::Result::Ok(port) = serialport::new(name, rate).open_native() {
-    //                 let arc_port = Arc::new(Mutex::new(Port {
-    //                     name: name.to_string(),
-    //                     baud: rate,
-    //                     port: Box::new(port),
-    //                 }));
-    //                 self.ports.insert(name.to_string(), arc_port.clone());
-    //                 return Ok(arc_port);
-    //             } else {
-    //                 return Err(
-    //                     SerialPortError::SerialPortOpenFailed(name.to_string(), rate).into(),
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
 }
