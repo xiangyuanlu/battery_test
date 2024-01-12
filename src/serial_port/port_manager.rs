@@ -16,6 +16,7 @@ use anyhow::{Ok, Result};
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use tracing::debug;
+use tracing::error;
 
 pub struct Port {
     name: String,
@@ -23,7 +24,8 @@ pub struct Port {
     tx: crossbeam::channel::Sender<DataFrame>,
     rx: crossbeam::channel::Receiver<DataFrame>,
     // port: Box<dyn SerialPort + Sync>,
-    trd: Option<JoinHandle<()>>,
+    trd_rx: Option<JoinHandle<()>>,
+    trd_tx: Option<JoinHandle<()>>,
 
     runing: Arc<AtomicBool>,
 }
@@ -37,7 +39,10 @@ impl Drop for Port {
     fn drop(&mut self) {
         self.runing
             .store(false, std::sync::atomic::Ordering::SeqCst);
-        if let Some(trd) = self.trd.take() {
+        if let Some(trd) = self.trd_rx.take() {
+            trd.join().unwrap();
+        }
+        if let Some(trd) = self.trd_rx.take() {
             trd.join().unwrap();
         }
     }
@@ -52,7 +57,7 @@ impl Port {
             .open_native()?;
 
         let runing = Arc::new(AtomicBool::new(true));
-        let trd = {
+        let trd_rx = {
             let mut port = port.try_clone()?;
             let runing = runing.clone();
             let mut buffer = [0u8; 512];
@@ -61,13 +66,44 @@ impl Port {
                 match port.read(&mut buffer[..]) {
                     Result::Ok(size) => {
                         debug!("{} rx:{:02X?}", name, &buffer[..size]);
-
                         let df = DataFrame {
                             buf: buffer.to_vec(),
                         };
                         tx.send(df);
                     }
+                    Err(err) => {
+                        error!("{} rx error: {}", name, err);
+                    }
+                }
+            })
+        };
+        let trd_tx = {
+            let mut buffer = [0u8; 512];
+            let mut port = port.try_clone()?;
+
+            thread::spawn(move || loop {
+                match rx.recv() {
+                    Result::Ok(df) => {
+                        if let Err(err) = port.write(&df.buf[..]) {
+                            error!("{} tx error: {}", name, err);
+                        } else {
+                            debug!("{} tx:{:02X?}", name, &df.buf[..]);
+                        }
+                    }
                     Err(err) => {}
+                }
+
+                match port.read(&mut buffer[..]) {
+                    Result::Ok(size) => {
+                        debug!("{} rx:{:02X?}", name, &buffer[..size]);
+                        let df = DataFrame {
+                            buf: buffer.to_vec(),
+                        };
+                        tx.send(df);
+                    }
+                    Err(err) => {
+                        error!("{} rx error: {}", name, err);
+                    }
                 }
             })
         };
@@ -76,10 +112,22 @@ impl Port {
             baud: 1200,
             tx,
             rx,
-            trd: Some(trd),
+            trd_rx: Some(trd_rx),
+            trd_tx: Some(trd_tx),
             runing,
         };
         Ok(port)
+    }
+
+    fn Recv(&self) -> Result<DataFrame> {
+        let df = self.rx.recv()?;
+        Ok(df)
+    }
+
+    fn Send(&self, buf: &[u8]) -> Result<usize> {
+        let df = DataFrame { buf: buf.to_vec() };
+        let sz = self.tx.send(df)?;
+        Ok(buf.len())
     }
 }
 
