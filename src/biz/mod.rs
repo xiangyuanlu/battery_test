@@ -9,15 +9,21 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 
-pub fn protocol_trans() {
+pub fn protocol_trans(
+    dev_1: String,
+    baud_1: u32,
+    tm_1: u64,
+    dev_2: String,
+    baud_2: u32,
+    tm_2: u64,
+) {
     loop {
-        if let Ok(s_port) = port_manager::get_manager().get_port("dev/ttyS2", 9600, 500) {
+        if let Ok(s_port) = port_manager::get_manager().get_port(&dev_1, baud_1, tm_1) {
             if let Ok(mut df) = s_port.Recv(2000) {
                 let buf = df.buf.as_mut_slice();
                 if true == crc_check(buf) {
                     let nn = serial_2_xbus(buf);
-                    if let Ok(dst_port) =
-                        port_manager::get_manager().get_port("dev/ttyS5", 1200, 500)
+                    if let Ok(dst_port) = port_manager::get_manager().get_port(&dev_2, baud_2, tm_2)
                     {
                         let _ = dst_port.Send(buf);
                         if let Ok(mut df) = dst_port.Recv(2000) {
@@ -59,10 +65,20 @@ pub fn crc_check(frm: &[u8]) -> bool {
 pub fn workloop() -> Result<bool> {
     let thread_recv = thread::spawn({
         move || {
-
+            protocol_trans(
+                "/dev/ttyS2".to_string(),
+                9600,
+                2000,
+                "/dev/ttyS5".to_string(),
+                1200,
+                2000,
+            );
             // Channel::recv_loop(reqs_to_recv, port2, working_param_2);
         }
     });
+    if let Err(err) = thread_recv.join() {
+        return Err(error::BizError::WorkLoopFailed().into());
+    }
     Ok(true)
 }
 

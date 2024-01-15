@@ -8,6 +8,8 @@ pub enum BizError {
     MqttParamsIllegal(String),
     #[error("mqtt connection failed:{0}")]
     MqttConntionFailed(String),
+    #[error("work loop start failed")]
+    WorkLoopFailed(),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
