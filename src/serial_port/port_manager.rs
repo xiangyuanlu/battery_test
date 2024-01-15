@@ -107,8 +107,9 @@ impl Port {
         Ok(port)
     }
 
-    pub fn Recv(&self) -> Result<DataFrame> {
-        let df = self.rx.recv()?;
+    pub fn Recv(&self, timeout: u64) -> Result<DataFrame> {
+        let tm = std::time::Duration::from_millis(timeout);
+        let df = self.rx.recv_timeout(tm)?;
         Ok(df)
     }
 

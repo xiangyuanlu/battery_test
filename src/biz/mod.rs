@@ -12,7 +12,7 @@ use tracing::info;
 pub fn protocol_trans() {
     loop {
         if let Ok(s_port) = port_manager::get_manager().get_port("dev/ttyS2", 9600, 500) {
-            if let Ok(mut df) = s_port.Recv() {
+            if let Ok(mut df) = s_port.Recv(2000) {
                 let buf = df.buf.as_mut_slice();
                 if true == crc_check(buf) {
                     let nn = serial_2_xbus(buf);
@@ -20,7 +20,7 @@ pub fn protocol_trans() {
                         port_manager::get_manager().get_port("dev/ttyS5", 1200, 500)
                     {
                         let _ = dst_port.Send(buf);
-                        if let Ok(mut df) = dst_port.Recv() {
+                        if let Ok(mut df) = dst_port.Recv(2000) {
                             let buf = df.buf.as_mut_slice();
                             if true == crc_check(buf) {
                                 let nn = xbus_2_serial(buf);
