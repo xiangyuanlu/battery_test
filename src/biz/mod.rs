@@ -185,21 +185,22 @@ pub fn workloop() -> Result<bool> {
 pub fn serial_2_xbus(buf: &[u8]) -> Result<Vec<u8>> {
     let mut ans: Vec<u8> = vec![];
     let plen = buf.len();
-    if plen < 5 {
-        error!("buf len too short, len is:{}", plen);
+    //crc least 7 len
+    if plen < 7 {
+        error!("buf from serial len too short, len is:{}", plen);
         return Err(error::PkgError::PackageLenTooShort(plen).into());
     }
     let mut cmd = buf[4];
     if let Some(cmd) = cmdBridge.get(&cmd) {
     } else {
-        error!("cmd trans failed, can not get pair cmd:{}", cmd);
+        error!("serial cmd trans failed, can not get pair cmd:{}", cmd);
         return Err(error::PkgError::CmdCanNotTrans(cmd).into());
     }
     ans.push(buf[0]);
     //del gate addr buf[1]
     ans.put_slice(&buf[2..3]);
     ans.push(cmd);
-    ans.put_slice(&buf[5..8]);
+    ans.put_slice(&buf[5..buf.len() - 3]);
 
     let mut crc_cal = calc_crc16(ans.as_slice());
     crc_cal = crc_cal.swap_bytes();
@@ -211,8 +212,29 @@ pub fn serial_2_xbus(buf: &[u8]) -> Result<Vec<u8>> {
 }
 
 pub fn xbus_2_serial(buf: &[u8], gate_addr: u8) -> Result<Vec<u8>> {
-    let ans: usize = 0;
-    todo!()
+    let mut ans: Vec<u8> = vec![];
+    let plen = buf.len();
+    if plen < 6 {
+        error!("buf from xbus len too short, len is:{}", plen);
+        return Err(error::PkgError::PackageLenTooShort(plen).into());
+    }
+    let mut cmd = buf[3];
+    if let Some(cmd) = cmdBridge.get(&cmd) {
+    } else {
+        error!("xbus cmd trans failed, can not get pair cmd:{}", cmd);
+        return Err(error::PkgError::CmdCanNotTrans(cmd).into());
+    }
+    ans.push(buf[0]);
+    ans.push(gate_addr);
+    ans.put_slice(&buf[1..2]);
+    ans.push(cmd);
+    ans.put_slice(&buf[4..buf.len() - 3]);
+
+    let mut crc_cal = calc_crc16(ans.as_slice());
+    crc_cal = crc_cal.swap_bytes();
+    ans.put_u16(crc_cal);
+
+    return Ok(ans);
 }
 
 pub fn protocol_trans_bak(
