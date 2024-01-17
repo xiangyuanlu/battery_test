@@ -15,3 +15,19 @@ pub enum BizError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
+
+#[derive(Error, Debug)]
+pub enum PkgError {
+    #[error("pkg len too small:{0}")]
+    PackageLenTooSmall(usize),
+    #[error("cmd can trans, no pair cmd:{0}")]
+    CmdCanNotTrans(u8),
+    #[error("mqtt connection failed:{0}")]
+    MqttConntionFailed(String),
+    #[error("work loop start failed")]
+    WorkLoopFailed(),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}

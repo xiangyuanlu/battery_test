@@ -18,6 +18,12 @@ use parking_lot::Mutex;
 use tracing::debug;
 use tracing::error;
 
+pub struct PortParam {
+    name: String,
+    baud: u32,
+    timeout: u64,
+}
+
 pub struct Port {
     name: String,
     baud: u32,
