@@ -18,8 +18,8 @@ pub enum BizError {
 
 #[derive(Error, Debug)]
 pub enum PkgError {
-    #[error("pkg len too small:{0}")]
-    PackageLenTooSmall(usize),
+    #[error("pkg len too short:{0}")]
+    PackageLenTooShort(usize),
     #[error("cmd can trans, no pair cmd:{0}")]
     CmdCanNotTrans(u8),
     #[error("mqtt connection failed:{0}")]

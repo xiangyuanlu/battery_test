@@ -8,6 +8,7 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::f32::consts::E;
+use std::ptr::addr_of;
 use std::{error::Error, sync::Arc, thread, thread::JoinHandle};
 use tracing::debug;
 use tracing::error;
@@ -31,44 +32,91 @@ pub fn protocol_trans(
     tm_2: u64,
 ) {
     loop {
-        if let Ok(s_port) = port_manager::get_manager().get_port(&dev_1, baud_1, tm_1) {
-            if let Ok(mut df) = s_port.Recv(2000) {
-                let buf = df.buf.as_mut_slice();
-                if true == crc_check(buf) {
-                    let nn: std::prelude::v1::Result<Box<[u8]>, anyhow::Error> = serial_2_xbus(buf);
-                    if let Ok(dst_port) = port_manager::get_manager().get_port(&dev_2, baud_2, tm_2)
-                    {
-                        let _ = dst_port.Send(buf);
-                        if let Ok(mut df) = dst_port.Recv(2000) {
-                            let buf = df.buf.as_mut_slice();
-                            if true == crc_check(buf) {
-                                let nn = xbus_2_serial(buf);
-                                let _ = s_port.Send(buf);
-                            } else {
-                                error!("crc check failed buf:{:?}", buf);
-                                continue;
-                            }
-                        }
-                    } else {
-                        error!("Unable to get port dev/ttyS5");
-                        break;
-                    }
-                } else {
-                    error!("crc check failed buf:{:?}", buf);
-                    continue;
-                }
+        let s_port = match port_manager::get_manager().get_port(&dev_1, baud_1, tm_1) {
+            Ok(port) => port,
+            Err(err) => {
+                error!("failed to get port:{} err:{:?}", dev_1, err);
+                break;
             }
-        } else {
-            error!("Unable to get port dev/ttyS2");
-            break;
+        };
+
+        let mut df = match s_port.Recv(2000) {
+            Ok(df) => df,
+            Err(err) => {
+                error!("src port:{} recv error:{:?}", dev_1, err);
+                continue;
+            }
+        };
+
+        let buf_1 = df.buf.as_mut_slice();
+        let buf = df.buf.as_slice();
+        if !crc_check(buf) {
+            error!("crc check failed buf:{:?}", buf);
+            continue;
         }
+
+        let mut vec = match serial_2_xbus(buf) {
+            Ok(vec) => vec,
+            Err(err) => {
+                error!("failed to trans buf from serial to xbus: {:?}", err);
+                continue;
+            } // Handle the error case appropriately
+        };
+
+        let gate_addr = match vec.pop() {
+            Some(addr) => addr,
+            None => {
+                error!("failed to get gate address");
+                continue;
+            }
+        };
+        let d_port = match port_manager::get_manager().get_port(&dev_2, baud_2, tm_2) {
+            Ok(port) => port,
+            Err(err) => {
+                error!("failed to get port:{} err:{:?}", dev_2, err);
+                break;
+            }
+        };
+
+        let rs = match d_port.Send(vec.as_slice()) {
+            Ok(r_len) => r_len,
+            Err(err) => {
+                error!("failed send to xbus");
+                continue;
+            }
+        };
+
+        let mut df = match d_port.Recv(2000) {
+            Ok(df) => df,
+            Err(_) => continue,
+        };
+
+        let buf = df.buf.as_slice();
+        if !crc_check(buf) {
+            error!("crc check failed buf:{:02x?}", buf);
+            continue;
+        }
+
+        let mut vec = match xbus_2_serial(buf, gate_addr) {
+            Ok(vec) => vec,
+            Err(_) => continue, // Handle the error case appropriately
+        };
+
+        let rs = match s_port.Send(vec.as_slice()) {
+            Ok(r_len) => r_len,
+            Err(err) => {
+                error!("failed send to xbus");
+                continue;
+            }
+        };
     }
 }
 
+//02 02 01 00 00 2a f8 1a
 pub fn crc_check(frm: &[u8]) -> bool {
     let mut ans = false;
     let crc_cal = calc_crc16(frm);
-    let crc_val: u16 = (frm[frm.len() - 2] as u16 * 256) + frm[frm.len() - 2] as u16;
+    let crc_val: u16 = (frm[frm.len() - 1] as u16 * 256) + frm[frm.len() - 2] as u16;
     if crc_val == crc_cal {
         ans = true;
     }
@@ -134,30 +182,84 @@ pub fn workloop() -> Result<bool> {
 //tool autoaddress
 // ab gate_addr addr  cmd   raddr iaddr crc
 // ab ga       00 00  0x80
-pub fn serial_2_xbus(buf: &[u8]) -> Result<Box<[u8]>> {
-    let mut trans: Vec<u8> = vec![];
+pub fn serial_2_xbus(buf: &[u8]) -> Result<Vec<u8>> {
+    let mut ans: Vec<u8> = vec![];
     let plen = buf.len();
     if plen < 5 {
-        return Err(error::PkgError::PackageLenTooSmall(plen).into());
+        error!("buf len too short, len is:{}", plen);
+        return Err(error::PkgError::PackageLenTooShort(plen).into());
     }
     let mut cmd = buf[4];
     if let Some(cmd) = cmdBridge.get(&cmd) {
     } else {
+        error!("cmd trans failed, can not get pair cmd:{}", cmd);
         return Err(error::PkgError::CmdCanNotTrans(cmd).into());
     }
-    trans.push(buf[0]);
+    ans.push(buf[0]);
     //del gate addr buf[1]
-    trans.put_slice(&buf[2..3]);
-    trans.push(cmd);
-    trans.put_slice(&buf[5..8]);
+    ans.put_slice(&buf[2..3]);
+    ans.push(cmd);
+    ans.put_slice(&buf[5..8]);
 
-    let crc_cal = calc_crc16(trans.as_slice());
+    let mut crc_cal = calc_crc16(ans.as_slice());
+    crc_cal = crc_cal.swap_bytes();
+    ans.put_u16(crc_cal);
+    //gate_addr will be used in buf trans to serial
+    ans.push(buf[1]);
 
+    return Ok(ans);
+}
+
+pub fn xbus_2_serial(buf: &[u8], gate_addr: u8) -> Result<Vec<u8>> {
     let ans: usize = 0;
     todo!()
 }
 
-pub fn xbus_2_serial(buf: &[u8]) -> Result<Box<[u8]>> {
-    let ans: usize = 0;
-    todo!()
+pub fn protocol_trans_bak(
+    dev_1: String,
+    baud_1: u32,
+    tm_1: u64,
+    dev_2: String,
+    baud_2: u32,
+    tm_2: u64,
+) {
+    loop {
+        if let Ok(s_port) = port_manager::get_manager().get_port(&dev_1, baud_1, tm_1) {
+            if let Ok(mut df) = s_port.Recv(2000) {
+                let buf = df.buf.as_mut_slice();
+                if true == crc_check(buf) {
+                    let nn = serial_2_xbus(buf);
+                    if let Ok(mut vec) = nn {
+                        let gate_addr = vec.pop().unwrap();
+                        if let Ok(dst_port) =
+                            port_manager::get_manager().get_port(&dev_2, baud_2, tm_2)
+                        {
+                            let _ = dst_port.Send(buf);
+                            if let Ok(mut df) = dst_port.Recv(2000) {
+                                let buf = df.buf.as_mut_slice();
+                                if true == crc_check(buf) {
+                                    let nn = xbus_2_serial(buf, 1);
+                                    let _ = s_port.Send(buf);
+                                } else {
+                                    error!("crc check failed buf:{:?}", buf);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            error!("Unable to get port dev/ttyS5");
+                            break;
+                        }
+                    } else {
+                        //todo no trace
+                    }
+                } else {
+                    error!("crc check failed buf:{:?}", buf);
+                    continue;
+                }
+            }
+        } else {
+            error!("Unable to get port dev/ttyS2");
+            break;
+        }
+    }
 }
